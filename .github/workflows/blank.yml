@@ -1,39 +1,165 @@
-# This is a basic workflow to help you get started with Actions
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
 
-name: CI
-
-# Controls when the workflow will run
+name: GIThub actions Maven build example
+# Environmental Variables
+env:
+  STACK: Java
+  BUILD_TECH: java_maven
+  CONTINUE_ON_ERROR: true
+  CONTINUE_ON_ERROR_SETUP: true
+  JOB_STATUS_CODE: 0
+  
 on:
-  # Triggers the workflow on push or pull request events but only for the main branch
   push:
-    branches: [ main ]
+    branches:
+      - master
+      - main
   pull_request:
-    branches: [ main ]
-
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+    branches:
+      -master
+      -main
 jobs:
-  # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
+    #Code Checkout#
+    
+    - name: ' Checkout repository on branch: ${{ github.REF }}'
+      uses: actions/checkout@v2
+      continue-on-error: ${{ env.CONTINUE_ON_ERROR }}
+      with:
+        ref: ${{ github.REF }}
+        fetch-depth: 0
+    - name: Run a one-line script
+      run: |
+        echo checking lists
+        ls -a
+    - name: Set up Node
+      uses: actions/setup-node@v1
+      with:
+        node-version: 12
+    - name: Opening pull request
+      id: pull
+      uses: ./
+      with:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        FROM_BRANCH: "main"
+        TO_BRANCH: "develop"
+    
+  
+      
+    - name: Step 2 - Set up JDK 11
+      id: setup_jdk
+      if: ${{env.STACK == 'java'}}
+      uses: actions/setup-java@v2
+      continue-on-error: ${{ env.CONTINUE_ON_ERROR }}
+      with:
+        java-version: '11'
+        distribution: 'adopt'
+        cache: maven
+        
+    - name: Cache SonarCloud packages
+      uses: actions/cache@v1
+      with:
+        path: ~/.sonar/cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+        
+    - name: Cache Maven packages
+      uses: actions/cache@v1
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: Build and analyze
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=alubillivani_test
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+##### Upload a Build Artifact#####
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
-          pwd
-          ls -a
-          env
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v2.2.4
+      with:
+          name: artifact
+          path: ${{Github.workspace}}//target/*.jar
+          
+######## JUnit Test with Maven ########
+
+    - name: Test with Maven
+      run: mvn -B test --file pom.xml
+  
+  ####  Jacoco code Coverage report #######
+  
+    - name: Log coverage percentage
+      run: |
+        echo "coverage = ${{ steps.jacoco.outputs.coverage }}"
+        echo "branch coverage = ${{ steps.jacoco.outputs.branches }}"     
+   
+    - name: Upload JaCoCo coverage report
+      uses: actions/upload-artifact@v2
+      with:
+        name: jacoco-report
+        path: target/site/jacoco/
+        
+    - name: Sonar Gate
+      shell : bash
+      run: |
+        ##curl --location --request GET 'curl --location --request GET 'https://sonarcloud.io/project/information?id=alubillivani_test' --header 'Authorization: Bearer e767ca54617cac3188f0cef8f80a6a43d8211784' | jq '.component.measures' | jq '.[] | {metrics:.metric,value: .value}' > ./Response.json
+        curl --location --request GET 'https://sonarcloud.io/api/measures/component?metricKeys=code_smells,coverage,duplicated_lines_density,vulnerabilities,security_hotspots,critical_violations,bugs&component=alubillivani_test' --header 'Authorization: Bearer bb81119ac9f8d979adce828182fbec09f5197485' > ./Response.json
+        cat ./Response.json
+        
+    - name: Docker setup
+      uses: docker/setup-buildx-action@v1
+        
+   ## - name: Build and Publish Docker Image
+    ##  uses: docker/docker-build-push@v1
+    ##  with:
+     ##   username: ${{ secrets.DOCKER_USERNAME }}
+     ##   password: ${{ secrets.DOCKER_PASSWORD }}
+      ##  registry: vani06/demo-app
+      ##  tags: latest
+      
+   
+    
+    
+    - name: Login to the registry 
+      uses: docker/login-action@v1
+      with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          
+    - name: Build and push the image
+      uses: docker/build-push-action@v2
+      with:
+            context: .
+            push: true
+            tags: vani06/demo-app:myalpinetag
+       
+      
+     
+    #- name: Build and Publish Docker Image
+    #  shell : bash
+     # run: |
+      #  docker --version
+       #docker build . -t testimage:alpine
+        #docker images
+      ##  docker tag testimage:alpine vani06/demo-app:myalpinetag
+      ##  docker images
+      ##  docker push vani06/demo-app:myalpinetag
+     
+     
+     ##docker push testimage:1     
+   # - name: Publish Docker Image
+    #  uses: tinact/docker.image@1.0.2
+     # with:
+      #  image_name: testimage:1
+       # registry_username: ${{ secrets.DOCKER_USERNAME }}
+       # registry_password: ${{ secrets.DOCKER_PASSWORD }}
+       # registry: vani06/demo-app
+       # image_tag: latest
+        #dockerfile: Dockerfile
