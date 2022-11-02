@@ -23,5 +23,5 @@ jobs:
     #Code Checkout#
     
     - name: context
-      run: echo "$GITHUBCONTEXT" > context.json
+      run: echo "$GITHUBCONTEXT" 
       
