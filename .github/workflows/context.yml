@@ -23,5 +23,7 @@ jobs:
     #Code Checkout#
     
     - name: context
+      env:
+        GITHUB_CONTEXT: ${{ toJson(github) }}
       run: echo "$GITHUBCONTEXT" 
       
